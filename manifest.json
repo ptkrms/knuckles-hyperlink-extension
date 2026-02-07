@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "Knuckles Hyperlinks",
+  "version": "0.1.0",
+  "description": "Copies the current tab as a ready-to-paste hyperlink using the page title.",
+  "background": {
+    "service_worker": "copy.js"
+  },
+  "action": {
+    "default_title": "Knuckles Hyperlinks"
+  },
+  "commands": {
+    "copy-link": {
+      "description": "Copy the current tab as a formatted hyperlink",
+      "suggested_key": {
+        "default": "Ctrl+Shift+C",
+        "mac": "Command+Shift+C"
+      }
+    }
+  },
+  "permissions": [
+    "clipboardWrite",
+    "tabs",
+    "contextMenus",
+    "offscreen"
+  ],
+  "optional_permissions": [
+    "notifications"
+  ]
+}
