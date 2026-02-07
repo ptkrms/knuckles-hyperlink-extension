@@ -1,165 +1,89 @@
-// ============================================================
-// Chrome Extension - Hyperlink Copier (Versão Refatorada)
-// Autor: [Seu Nome]
-// Objetivo: Copiar links de abas abertas no Chrome para a área de transferência
-// Funcionalidades: Copiar como texto simples ou como link enriquecido (HTML)
-// ============================================================
+// Service Worker - Knuckles Hyperlinks
+// Responsável por capturar a aba ativa e delegar a cópia do hyperlink
+// para o documento offscreen (Manifest V3)
 
-// IDs dos menus de contexto
-const COPY_AS_PLAIN_MENU_ITEM_ID = 'copy-as-plain';
-const COPY_LINK_MENU_ITEM_ID = 'copy-as-html';
+chrome.action.onClicked.addListener(async (tab) => {
+  if (!tab || !tab.url || !tab.title) {
+    showNotification(
+      'Erro',
+      'Não foi possível obter informações da aba ativa.'
+    );
+    return;
+  }
 
-// ------------------------------
-// Inicializa os menus de contexto
-// ------------------------------
-chrome.contextMenus.removeAll(); // Remove menus antigos para evitar duplicação
-
-// Menu: Copiar como texto simples
-chrome.contextMenus.create({
-  id: COPY_AS_PLAIN_MENU_ITEM_ID,
-  title: "Copy as Plain Text",
-  contexts: ["action"]
-});
-
-// Menu: Copiar como link enriquecido (HTML)
-chrome.contextMenus.create({
-  id: COPY_LINK_MENU_ITEM_ID,
-  title: "Copy Link as Rich Text",
-  contexts: ["action"]
-});
-
-// ------------------------------
-// Ação ao clicar em um item de menu
-// ------------------------------
-chrome.contextMenus.onClicked.addListener(function(info, tab) {
-  switch (info.menuItemId) {
-    case COPY_AS_PLAIN_MENU_ITEM_ID:
-      copyTabLinkToClipboard(tab, false); // texto simples
-      break;
-
-    case COPY_LINK_MENU_ITEM_ID:
-      copyTabLinkToClipboard(tab, true); // link HTML
-      break;
-
-    default:
-      console.error('Menu item desconhecido: ' + info.menuItemId);
+  try {
+    await copyLinkToClipboard(tab.url, tab.title);
+    showNotification(
+      'Link copiado',
+      `"${tab.title}" foi copiado para a área de transferência`
+    );
+  } catch (error) {
+    console.error('Erro ao copiar link:', error);
+    showNotification(
+      'Erro',
+      'Não foi possível copiar o link.'
+    );
   }
 });
 
-// ------------------------------
-// Ação ao clicar no botão da extensão
-// ------------------------------
-chrome.action.onClicked.addListener(function(tab) {
-  copyTabLinkToClipboard(tab, true); // padrão: link HTML
-});
+// =========================
+// Offscreen Document Logic
+// =========================
 
-// ------------------------------
-// Atalhos do teclado
-// ------------------------------
-chrome.commands.onCommand.addListener(function(command) {
-  getActiveTab(function(tab) {
-    switch (command) {
-      case 'copy-link':
-        copyTabLinkToClipboard(tab, true);
-        break;
+let offscreenCreating = null;
 
-      case 'copy-as-plain':
-        copyTabLinkToClipboard(tab, false);
-        break;
+async function ensureOffscreenDocument() {
+  const offscreenUrl = chrome.runtime.getURL('offscreen.html');
 
-      default:
-        console.error('Comando desconhecido: ' + command);
-    }
-  });
-});
-
-// ------------------------------
-// Função para obter a aba ativa
-// ------------------------------
-function getActiveTab(callback) {
-  chrome.tabs.query({ lastFocusedWindow: true, active: true }, function(tabs) {
-    if (tabs && tabs.length > 0) {
-      callback(tabs[0]);
-    } else {
-      showNotification('Erro', 'Nenhuma aba ativa encontrada.');
-    }
-  });
-}
-
-// ------------------------------
-// Função para exibir notificações
-// ------------------------------
-function showNotification(title, message) {
-  chrome.permissions.request({ permissions: ['notifications'] }, function(granted) {
-    if (granted) {
-      chrome.notifications.create('', {
-        type: 'basic',
-        title: title,
-        message: message,
-        iconUrl: 'icon.png' // Certifique-se de ter o ícone
-      });
-    } else {
-      console.log('Permissão de notificações negada. Mensagem não exibida.');
-    }
-  });
-}
-
-// ------------------------------
-// Documento offscreen para copiar conteúdo
-// ------------------------------
-let offscreenDocumentCreating; // Garante que só um documento seja criado por vez
-
-async function setupOffscreenDocument(path) {
-  const offscreenUrl = chrome.runtime.getURL(path);
-  const existingContexts = await chrome.runtime.getContexts({
+  const existing = await chrome.runtime.getContexts({
     contextTypes: ['OFFSCREEN_DOCUMENT'],
-    documentUrls: [offscreenUrl]
+    documentUrls: [offscreenUrl],
   });
 
-  if (existingContexts.length > 0) return; // Já existe
-
-  if (offscreenDocumentCreating) {
-    await offscreenDocumentCreating;
-  } else {
-    offscreenDocumentCreating = chrome.offscreen.createDocument({
-      url: path,
-      reasons: ['CLIPBOARD'],
-      justification: 'Copiar link para área de transferência'
-    });
-    await offscreenDocumentCreating;
-    offscreenDocumentCreating = null;
+  if (existing.length > 0) {
+    return;
   }
+
+  if (!offscreenCreating) {
+    offscreenCreating = chrome.offscreen.createDocument({
+      url: 'offscreen.html',
+      reasons: ['CLIPBOARD'],
+      justification: 'Copy hyperlink to clipboard',
+    });
+  }
+
+  await offscreenCreating;
+  offscreenCreating = null;
 }
 
-// ------------------------------
-// Função para enviar link ao offscreen document
-// ------------------------------
-async function copyToOffscreenClipboard(url, title, as_html) {
-  await setupOffscreenDocument('offscreen.html');
-  await chrome.runtime.sendMessage({
-    type: 'copyToClipboard',
-    target: 'offscreen-document',
-    url: url,
-    title: title,
-    as_html: as_html
+async function copyLinkToClipboard(url, title) {
+  await ensureOffscreenDocument();
+
+  return chrome.runtime.sendMessage({
+    type: 'COPY_HYPERLINK',
+    payload: {
+      url,
+      title,
+    },
   });
 }
 
-// ------------------------------
-// Função principal de cópia de link
-// ------------------------------
-function copyTabLinkToClipboard(tab, as_html) {
-  const url = tab.url;
-  const title = tab.title;
+// =========================
+// Notifications
+// =========================
 
-  console.log('Copiando para a área de transferência:', url, title);
+function showNotification(title, message) {
+  chrome.permissions.request(
+    { permissions: ['notifications'] },
+    (granted) => {
+      if (!granted) return;
 
-  copyToOffscreenClipboard(url, title, as_html)
-    .then(() => {
-      showNotification('Link copiado!', `"${title}" foi copiado para a área de transferência.`);
-    })
-    .catch(error => {
-      showNotification('Erro ao copiar', 'Não foi possível copiar o link.');
-      console.error('Erro ao copiar via offscreen:', error);
-    });
+      chrome.notifications.create({
+        type: 'basic',
+        title,
+        message,
+        iconUrl: 'icon.png',
+      });
+    }
+  );
 }
