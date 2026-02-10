@@ -53,19 +53,6 @@ Click Load unpacked
 
 Select the project folder
 
-## Motivation
-
-This project was developed as a practical exercise in:
-
-Chrome extension development
-
-Working with Manifest V3 constraints
-
-Clean refactoring and collaborative version control
-
-Delivering a simple, focused productivity tool
-
-
-License
+## License
 
 This project is licensed under the MIT License.
